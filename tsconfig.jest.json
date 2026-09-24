@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] },
+    "ignoreDeprecations": "5.0",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": ["jest", "node"]
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/features/**/*.ts",
+    "src/theme/tokens.ts"
+  ]
+}

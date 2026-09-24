@@ -1,0 +1,12 @@
+# Local development settings for `supabase start`. Hosted projects take these
+# from the dashboard instead (see README → Backend).
+project_id = "travel-hub"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed/countries.sql", "./seed/segment_types.sql", "./seed/airports.sql"]
+
+[auth]
+# Accounts are created by an admin, and the email must also be whitelisted in
+# private.allowed_emails before the app shows anything.
+enable_signup = false

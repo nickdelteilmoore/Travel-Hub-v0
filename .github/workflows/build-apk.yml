@@ -1,0 +1,116 @@
+name: Build Android APK
+
+# Builds an installable, standalone Travel Hub APK on GitHub's runners — a free
+# alternative to EAS cloud builds. Trigger it from the Actions tab
+# (Build Android APK → Run workflow); the finished .apk is attached to the run
+# as a downloadable artifact.
+#
+# The release variant is signed with the auto-generated debug key, which is
+# fine for sideloading and testing. The Supabase URL + anon key come from the
+# repository's Actions secrets (Settings → Secrets and variables → Actions) so
+# the source never names a live project; they are RLS-gated public values, but
+# a public repo shouldn't point strangers at the backend.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Lets the prune steps below delete old travel-hub-apk artifacts via the API.
+  actions: write
+
+jobs:
+  # Delete-only cleanup that keeps just the newest travel-hub-apk. It runs on
+  # its own (no dependency on the build), so dispatching this workflow frees
+  # Actions storage within seconds — even when a full storage quota is blocking
+  # the build's own upload. Doubles as a manual "free space now" button.
+  prune-artifacts:
+    name: Prune old APK artifacts (keep last 1)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all but the newest APK artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/actions/artifacts" --paginate \
+            -q '.artifacts[] | select(.name == "travel-hub-apk") | [.created_at, .id] | @tsv' \
+            | sort -r \
+            | tail -n +2 \
+            | while IFS=$'\t' read -r created id; do
+                echo "Deleting artifact $id (created $created)"
+                gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+              done
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Restore the Gradle home so re-runs skip the cold dependency + NDK fetch.
+      # Restore-only (no matching save step): the account's Actions storage is
+      # kept near-empty on purpose (see the prune jobs), so the save that the
+      # full actions/cache action runs on exit was failing on the quota and
+      # marking an otherwise-successful build — APK already built and uploaded —
+      # as failed. Restoring without saving keeps the speed-up when a cache
+      # exists and never turns a good build red.
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate the android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Assemble release APK
+        working-directory: android
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: travel-hub-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          # Builds are throwaway sideload binaries, not release records — no
+          # reason to keep them past a week.
+          retention-days: 7
+
+      # actions/upload-artifact has no "keep last N" option, so this prunes by
+      # hand: list every travel-hub-apk artifact newest-first, keep only the top
+      # 1 (this run's upload), delete the rest. if: always() so it still trims
+      # the backlog when the upload above failed on a full storage quota.
+      - name: Prune old APK artifacts (keep last 1)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/actions/artifacts" --paginate \
+            -q '.artifacts[] | select(.name == "travel-hub-apk") | [.created_at, .id] | @tsv' \
+            | sort -r \
+            | tail -n +2 \
+            | while IFS=$'\t' read -r created id; do
+                echo "Deleting artifact $id (created $created)"
+                gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+              done
