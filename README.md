@@ -8,8 +8,6 @@ with the nearest metro. It works offline and syncs when you land.
 It's a template: you bring your own [Supabase](https://supabase.com) project,
 and only the email addresses you whitelist can use it.
 
-Built with a botanical design language: an asymmetric "leaf" corner on every
-card, Cream Linen and Deep Moss palettes, and Albert Sans + Inter type.
 
 ## Features
 
